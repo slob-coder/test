@@ -1,0 +1,180 @@
+# AI视频生成应用 - Docker Compose 开发环境配置
+# 使用方法: docker-compose up -d
+
+version: '3.8'
+
+services:
+  # ==================== 基础设施服务 ====================
+  
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: aivideo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aivideo
+      POSTGRES_PASSWORD: aivideo_dev_password
+      POSTGRES_DB: aivideo
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aivideo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存 + 消息队列
+  redis:
+    image: redis:7-alpine
+    container_name: aivideo-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO 对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: aivideo-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # API 端口
+      - "9001:9001"   # Console 端口
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # ==================== 应用服务 ====================
+
+  # 后端 API 服务
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aivideo-backend
+    restart: unless-stopped
+    environment:
+      - APP_ENV=development
+      - DEBUG=true
+      - DATABASE_URL=postgresql+asyncpg://aivideo:aivideo_dev_password@postgres:5432/aivideo
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:80
+      - STORAGE_TYPE=local
+      - UPLOAD_DIR=/app/uploads
+      # AI 服务配置（需要替换为实际 Key）
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    volumes:
+      - ./backend:/app
+      - backend_uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker (异步任务处理)
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aivideo-celery-worker
+    restart: unless-stopped
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://aivideo:aivideo_dev_password@postgres:5432/aivideo
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - STORAGE_TYPE=local
+      - UPLOAD_DIR=/app/uploads
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    volumes:
+      - ./backend:/app
+      - backend_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+
+  # 前端开发服务器
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: aivideo-frontend
+    restart: unless-stopped
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+      - VITE_APP_TITLE=AI视频生成
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    command: pnpm dev --host 0.0.0.0 --port 3000
+
+  # Nginx 反向代理 (生产环境使用)
+  nginx:
+    image: nginx:1.24-alpine
+    container_name: aivideo-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - frontend_dist:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+      - frontend
+    profiles:
+      - production
+
+# ==================== 数据卷 ====================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  backend_uploads:
+    driver: local
+  frontend_dist:
+    driver: local
+
+# ==================== 网络 ====================
+networks:
+  default:
+    name: aivideo-network
