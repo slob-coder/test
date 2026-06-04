@@ -3,13 +3,16 @@ Pytest configuration and fixtures for backend tests.
 """
 
 import pytest
-from typing import AsyncGenerator, Generator
-from httpx import AsyncClient
+from typing import AsyncGenerator
+from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
-from app.database import Base, get_db
-from app.main import app
+# Import only what we need for auth tests
+from app.models.user import User
+from app.dependencies import get_current_user
 
 
 # Test database URL (in-memory SQLite for testing)
@@ -34,13 +37,14 @@ async def test_engine():
         poolclass=StaticPool,
     )
     
+    # Only create User table for auth tests
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(User.__table__.create)
     
     yield engine
     
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(User.__table__.drop)
     
     await engine.dispose()
 
@@ -61,12 +65,48 @@ async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
 @pytest.fixture(scope="function")
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create test HTTP client."""
+    from app.api.auth import router as auth_router
+    from app.database import get_db
+    
+    # Create a minimal test app with only auth routes
+    app = FastAPI()
+    
+    # Add exception handler for HTTPException to return unified format
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        """统一处理 HTTPException，返回标准格式"""
+        if isinstance(exc.detail, dict):
+            # 如果 detail 是字典（包含 code 和 message）
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "code": exc.detail.get("code", 40001),
+                    "message": exc.detail.get("message", "Error"),
+                    "data": None
+                }
+            )
+        else:
+            # 如果 detail 是字符串
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={
+                    "code": 40001,
+                    "message": str(exc.detail),
+                    "data": None
+                }
+            )
+    
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
+    
     async def override_get_db():
         yield db_session
     
     app.dependency_overrides[get_db] = override_get_db
     
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test"
+    ) as ac:
         yield ac
     
     app.dependency_overrides.clear()

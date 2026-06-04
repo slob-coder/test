@@ -1,7 +1,7 @@
 """Auth schemas - M01: Authentication Module."""
 
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
 
@@ -25,10 +25,12 @@ class LoginRequest(BaseModel):
 
 class UserDTO(BaseModel):
     """User data transfer object."""
+    model_config = ConfigDict(from_attributes=True)
+    
     id: str
     username: str
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
 
 
 class LoginResponse(BaseModel):

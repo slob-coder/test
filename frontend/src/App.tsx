@@ -1,18 +1,30 @@
+import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 
-// 页面组件 - TODO: 实现具体页面
+// 页面组件 - Lazy loading
 const LoginPage = React.lazy(() => import('./pages/Login'))
 const RegisterPage = React.lazy(() => import('./pages/Register'))
 const ProjectListPage = React.lazy(() => import('./pages/ProjectList'))
 const ProjectWorkspacePage = React.lazy(() => import('./pages/ProjectWorkspace'))
 
-// 受保护的路由
+// 受保护的路由 - 未登录用户重定向到登录页
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
+  }
+  
+  return <>{children}</>
+}
+
+// 公开路由 - 已登录用户重定向到项目列表
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuthStore()
+  
+  if (isAuthenticated) {
+    return <Navigate to="/projects" replace />
   }
   
   return <>{children}</>
@@ -30,16 +42,44 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   )
 }
 
+// 加载中组件
+function LoadingFallback() {
+  return (
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      minHeight: '100vh' 
+    }}>
+      Loading...
+    </div>
+  )
+}
+
 function App() {
   return (
     <BrowserRouter>
-      <React.Suspense fallback={<div>Loading...</div>}>
+      <React.Suspense fallback={<LoadingFallback />}>
         <Routes>
-          {/* 公开路由 */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+          {/* 公开路由 - 已登录用户自动跳转 */}
+          <Route 
+            path="/login" 
+            element={
+              <PublicRoute>
+                <LoginPage />
+              </PublicRoute>
+            } 
+          />
+          <Route 
+            path="/register" 
+            element={
+              <PublicRoute>
+                <RegisterPage />
+              </PublicRoute>
+            } 
+          />
           
-          {/* 受保护路由 */}
+          {/* 受保护路由 - 未登录用户跳转登录页 */}
           <Route
             path="/projects"
             element={
