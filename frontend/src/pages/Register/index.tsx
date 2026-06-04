@@ -3,10 +3,11 @@
  * F01 用户注册与登录
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Form, Input, Button, Card, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuthStore } from '../../stores/authStore';
 
 interface RegisterForm {
   username: string;
@@ -17,12 +18,23 @@ interface RegisterForm {
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const { register } = useAuthStore();
 
   const handleSubmit = async (values: RegisterForm) => {
-    // TODO: 实现注册逻辑
-    console.log('Register values:', values);
-    message.success('注册成功，请登录');
-    navigate('/login');
+    setLoading(true);
+    try {
+      await register(values.username, values.password);
+      message.success('注册成功，请登录');
+      setTimeout(() => {
+        navigate('/login');
+      }, 1500);
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.message || '注册失败，请重试';
+      message.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,8 +61,9 @@ const RegisterPage: React.FC = () => {
           >
             <Input 
               prefix={<UserOutlined />} 
-              placeholder="用户名" 
+              placeholder="请输入用户名" 
               size="large"
+              maxLength={50}
             />
           </Form.Item>
 
@@ -63,8 +76,9 @@ const RegisterPage: React.FC = () => {
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="密码"
+              placeholder="请输入密码"
               size="large"
+              maxLength={128}
             />
           </Form.Item>
 
@@ -85,13 +99,21 @@ const RegisterPage: React.FC = () => {
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="确认密码"
+              placeholder="请确认密码"
               size="large"
+              maxLength={128}
             />
           </Form.Item>
 
           <Form.Item>
-            <Button type="primary" htmlType="submit" block size="large">
+            <Button 
+              type="primary" 
+              htmlType="submit" 
+              block 
+              size="large"
+              loading={loading}
+              disabled={loading}
+            >
               注册
             </Button>
           </Form.Item>
