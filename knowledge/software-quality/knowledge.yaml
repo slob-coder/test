@@ -1,0 +1,36 @@
+name: 软件质量工程知识库
+description: >
+  基于 ISO/IEC 25010 和黑盒测试方法论的软件质量工程知识库，
+  涵盖非功能测试维度、功能测试用例设计方法论和模板。
+engine: v2
+
+knowledge:
+  taxonomy:
+    - id: nfr
+      label: 非功能测试
+      description: 基于 ISO/IEC 25010 的非功能测试全维度 checklist
+    - id: test-design
+      label: 测试设计方法
+      description: 黑盒测试用例设计方法论（7种方法 + 覆盖维度 + 应用顺序）
+    - id: template
+      label: 用例模板
+      description: 测试用例标准格式模板（9要素）+ LLM 提示模板
+    - id: security
+      label: 安全测试
+      description: Web 应用安全测试指南（基于 OWASP，含具体测试手法）
+    - id: api-testing
+      label: API测试
+      description: REST API 测试指南（覆盖维度 + 常见陷阱 + curl 模板）
+
+  index:
+    nfr-checklist.md: [nfr, iso25010, performance, security, reliability, usability, compatibility]
+    functional-test-methods.md: [test-design, scenario, equivalence, boundary, decision-table, state-transition]
+    test-case-template.md: [template, format, case-elements, llm-prompt]
+    security-testing-guide.md: [security, owasp, injection, xss, csrf, auth, api-security]
+    api-testing-guide.md: [api-testing, rest, http, status-code, input-validation, error-handling]
+
+  source:
+    - type: local
+      root: knowledge
+
+  relations: []
